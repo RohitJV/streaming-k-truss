@@ -511,7 +511,6 @@ void traversalAlgorithm(vault_t *vault,
 void stream(params_t *params,
             vault_t *vault,
             char* edgesFile,
-            // int offset,
             char* outputLocation) {
 
   int32_t buffer = 1000; /* How many edges (max) can it handle */
@@ -519,7 +518,6 @@ void stream(params_t *params,
 
   /* Pre-processing done here */
   gk_graph_t *modifiedGraph = createModifiedGraph(vault, buffer);
-
   ssize_t nvtxs = vault->graph->nvtxs;
   edge_t* inserted_edge = gk_malloc(sizeof(edge_t), "stream: inserted edge");
   int32_t *rootEdges = gk_i32malloc(vault->graph->nvtxs * 2, "stream: Root edges to begin the search space from");
@@ -553,6 +551,7 @@ void stream(params_t *params,
     sscanf(line, "%d %d", &vtx1, &vtx2);
 
     clearTimers(vault);
+    /* Initialize memory */
     memset(visited, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
     memset(evicted, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
     memset(mtd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
@@ -565,16 +564,19 @@ void stream(params_t *params,
     inserted_edge->vi = vault->perm[vtx1-1];
     inserted_edge->vj = vault->perm[vtx2-1];
 
+    /* Add the new edge to the modifiedGraph */
     gk_startwctimer(vault->timer_1);
     int32_t refEdge = addNewEdge(vault, modifiedGraph, inserted_edge);
     gk_stopwctimer(vault->timer_1);
 
+    /* Select rootedges to begin DFS from */
     gk_startwctimer(vault->timer_2);
     int32_t *trussWiseSupCount = gk_i32malloc(vault->ktmax+2, "stream: Truss-wise support count");
     int32_t rootEdgesCount = 0;
     selectRootEdgesForDFS(vault, modifiedGraph, inserted_edge, trussWiseSupCount, rootEdges, &rootEdgesCount);
     gk_stopwctimer(vault->timer_2);
 
+    /* Traversal Algorithms's runtime */
     gk_startwctimer(vault->timer_3);
     int evictionTime = 1;
     traversalAlgorithm(vault, modifiedGraph, refEdge, visited, evicted,
@@ -583,15 +585,16 @@ void stream(params_t *params,
     gk_stopwctimer(vault->timer_3);
 
     /* Write to output file */
-    // char* outputFile = strdup(outputLocation);
-    // char outputNum[10];
-    // sprintf(outputNum, "%d", i+1);
-    // strcat(outputFile, outputNum); strcat(outputFile, ".out");
-    // writeKTToFile(vault, modifiedGraph, outputFile);
+    char* outputFile = strdup(outputLocation);
+    char outputNum[10];
+    sprintf(outputNum, "%d", i+1);
+    strcat(outputFile, outputNum); strcat(outputFile, ".out");
+    writeKTToFile(vault, modifiedGraph, outputFile);
 
     gk_stopwctimer(vault->timer_global);
 
     gk_free((void **)&trussWiseSupCount, LTERM);
+    /* Calculate runtimes of various components */
     totalRuntime = totalRuntime + gk_getwctimer(vault->timer_global);
     addEdgeTime = addEdgeTime + gk_getwctimer(vault->timer_1);
     selectRootEdgesTime = selectRootEdgesTime + gk_getwctimer(vault->timer_2);
