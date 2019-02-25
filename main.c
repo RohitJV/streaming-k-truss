@@ -138,10 +138,11 @@ int main(int argc, char *argv[])
 
   gk_stopwctimer(vault->timer_global);
 
+#ifdef TEST_CORRECTNESS
   if (vault->ktedges && params->dbglvl&8)
     kt_CheckKTrussDecomposition(params, vault);
-
   writeResults(params, vault);
+#endif
 
   printf("#triangles: %"PRId64"; rate: %.4lf MT/sec\n", ntriangles,
       ((double)ntriangles)/((double)1e6*gk_getwctimer(vault->timer_2)));
@@ -186,8 +187,7 @@ int main(int argc, char *argv[])
     char *ptr = strrchr(newEdgesFile, '/');
     strcpy(ptr, "/newEdges.edges");
     ptr = strrchr(outputLocation, '/');
-    strcpy(ptr, "/incremental/");
-    // strcpy(ptr, "/");
+    strcpy(ptr, "/");
     printf("Edges file location : %s,     Output Location : %s",
             newEdgesFile, outputLocation);
     stream(params, vault, newEdgesFile, outputLocation);

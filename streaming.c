@@ -559,7 +559,6 @@ void stream(params_t *params,
     memset(td, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
 
     gk_startwctimer(vault->timer_global);
-
     printf("Inserted Edge %d: (%d, %d)\n", i, vtx1-1, vtx2-1);
     inserted_edge->vi = vault->perm[vtx1-1];
     inserted_edge->vj = vault->perm[vtx2-1];
@@ -576,22 +575,23 @@ void stream(params_t *params,
     selectRootEdgesForDFS(vault, modifiedGraph, inserted_edge, trussWiseSupCount, rootEdges, &rootEdgesCount);
     gk_stopwctimer(vault->timer_2);
 
-    /* Traversal Algorithms's runtime */
+    /* Traversal algorithm */
     gk_startwctimer(vault->timer_3);
     int evictionTime = 1;
     traversalAlgorithm(vault, modifiedGraph, refEdge, visited, evicted,
                        trussWiseSupCount, rootEdges, rootEdgesCount,
                        ptd, mtd, td, &evictionTime);
     gk_stopwctimer(vault->timer_3);
+    gk_stopwctimer(vault->timer_global);
 
     /* Write to output file */
+#ifdef TEST_CORRECTNESS
     char* outputFile = strdup(outputLocation);
     char outputNum[10];
     sprintf(outputNum, "%d", i+1);
     strcat(outputFile, outputNum); strcat(outputFile, ".out");
     writeKTToFile(vault, modifiedGraph, outputFile);
-
-    gk_stopwctimer(vault->timer_global);
+#endif
 
     gk_free((void **)&trussWiseSupCount, LTERM);
     /* Calculate runtimes of various components */
@@ -607,6 +607,12 @@ void stream(params_t *params,
     fprintf(fpout, "%.6lf\n", gk_getwctimer(vault->timer_global));
     gk_fclose(fpout);
   }
+
+  printf("Total addEdgeTime Runtime : %.2lf\n", addEdgeTime);
+  printf("Total selectRootEdgesTime Runtime : %.2lf\n", selectRootEdgesTime);
+  printf("Total Incremental traversalTime : %.2lf\n", traversalTime);
+  printf("Total Incremental Runtime : %.2lf\n", totalRuntime);
+
   /* Cleanup */
   gk_free((void **)&inserted_edge, LTERM);
   gk_free((void **)&rootEdges, LTERM);
@@ -615,15 +621,9 @@ void stream(params_t *params,
   gk_free((void **)&mtd, LTERM);
   gk_free((void **)&ptd, LTERM);
   gk_free((void **)&td, LTERM);
-
-  printf("Total addEdgeTime Runtime : %.2lf\n", addEdgeTime);
-  printf("Total selectRootEdgesTime Runtime : %.2lf\n", selectRootEdgesTime);
-  printf("Total Incremental traversalTime : %.2lf\n", traversalTime);
-  printf("Total Incremental Runtime : %.2lf\n", totalRuntime);
   gk_free((void **)&vault->kt, LTERM);
   gk_free((void **)&vault->endIdx, LTERM);
   gk_free((void **)&vault->revIdx, LTERM);
-
   gk_free((void **)&modifiedGraph->xadj, LTERM);
   gk_free((void **)&modifiedGraph->adjncy, LTERM);
   gk_free((void **)&modifiedGraph, LTERM);

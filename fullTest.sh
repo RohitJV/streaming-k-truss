@@ -24,11 +24,10 @@ do
   sort $dataset_dir/baseline/$j.out > $dataset_dir/baseline/sorted_$j.out
 done
 
-mkdir $dataset_dir/incremental
 ./build/Linux-x86_64/kt -kttype=baseline5 -stream=1 $dataset_dir/$1_0.metis temp.out
 for j in $(seq 1 $3)
 do
-  sort $dataset_dir/incremental/$j.out > $dataset_dir/incremental/sorted_$j.out
+  sort $dataset_dir/$j.out > $dataset_dir/sorted_$j.out
 done
 
 awk '{if (NR!=1) n += $1}; END{print "Total Baseline Runtime : " n}' $dataset_dir/baselineTimings.txt

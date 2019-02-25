@@ -9,6 +9,8 @@
 #ifndef __DEF_H__
 #define __DEF_H__
 
+// #define TEST_CORRECTNESS
+
 #define MAXLINE         1024*128
 #define MAX_STRLEN      1024*128
 
