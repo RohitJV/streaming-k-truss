@@ -1,7 +1,6 @@
 #include "kt.h"
 
 #define INF 1000000000
-#define MTD_OPT
 
 void clearTimers(vault_t *vault) {
   gk_clearwctimer(vault->timer_1);
@@ -101,57 +100,7 @@ gk_graph_t* createModifiedGraph(vault_t *vault,
       endIdx[vi]++; endIdx[vj]++;
     }
   }
-
-  /* Free original graph */
-  gk_free((void **)&vault->graph->xadj, LTERM);
-  gk_free((void **)&vault->graph->adjncy, LTERM);
-  gk_free((void **)&vault->ugraph->xadj, LTERM);
-  gk_free((void **)&vault->ugraph->adjncy, LTERM);
-  gk_free((void **)&vault->ugraph->iadjwgt, LTERM);
-  gk_free((void **)&vault->ugraph, LTERM);
-  gk_free((void **)&vault->lgraph->xadj, LTERM);
-  gk_free((void **)&vault->lgraph->adjncy, LTERM);
-  gk_free((void **)&vault->lgraph, LTERM);
-  gk_free((void **)&vault->ktedges, LTERM);
-
   return graph;
-}
-
-void selectRootEdgesForDFS(vault_t *vault,
-                          gk_graph_t *graph,
-                          edge_t *inserted_edge,
-                          int32_t *trussWiseSupCount,
-                          int32_t *rootEdges,
-                          int32_t *rootEdgesCount) {
-
-  int32_t vi=inserted_edge->vi, vj=inserted_edge->vj;
-  int32_t starti = graph->xadj[vi], endi = vault->endIdx[vi];
-  int32_t startj = graph->xadj[vj], endj = vault->endIdx[vj];
-  int32_t *adjncy = graph->adjncy, *kt = vault->kt;
-
-  memset(trussWiseSupCount, 0, (vault->ktmax + 2) * sizeof(int32_t));
-  while(starti<endi && startj<endj) {
-    if(adjncy[starti] == adjncy[startj]) {
-      if(kt[starti]==kt[startj]) {
-        trussWiseSupCount[kt[starti]]++;
-        rootEdges[(*rootEdgesCount)++] = starti;
-        rootEdges[(*rootEdgesCount)++] = startj;
-      }
-      else if(kt[starti]<kt[startj]) {
-        trussWiseSupCount[kt[starti]]++;
-        rootEdges[(*rootEdgesCount)++] = starti;
-      }
-      else {
-        trussWiseSupCount[kt[startj]]++;
-        rootEdges[(*rootEdgesCount)++] = startj;
-      }
-      starti++; startj++;
-    }
-    else if(adjncy[starti] < adjncy[startj])
-      starti++;
-    else
-      startj++;
-  }
 }
 
 int32_t addNewEdge(vault_t *vault,
@@ -294,243 +243,13 @@ int32_t PTD(vault_t *vault,
   return (ptd[revIdx[e]] = ptd[e]);
 }
 
-void propagateEviction(vault_t *vault,
-                gk_graph_t *graph,
-                int32_t *evicted,
-                int32_t *mtd,
-                int32_t *td,
-                int32_t e,
-                int32_t k,
-                int32_t *evictionTime) {
-
-  int32_t *adjncy=graph->adjncy, *kt = vault->kt;
-  ssize_t *revIdx = vault->revIdx;
-  int32_t vi=adjncy[e], vj=adjncy[revIdx[e]], ei, ej;
-  int32_t starti = graph->xadj[vi], endi = vault->endIdx[vi];
-  int32_t startj = graph->xadj[vj], endj = vault->endIdx[vj];
-
-  int32_t currentEvictionTime = (*evictionTime)++;
-  evicted[e] = currentEvictionTime;
-  evicted[revIdx[e]] = currentEvictionTime;
-
-  while(starti<endi && startj<endj) {
-    if(adjncy[starti] == adjncy[startj]) {
-      ei = starti;
-      ej = startj;
-      if(gk_min(kt[ei], kt[ej]) == k) {
-        if(kt[ei]<kt[ej]
-            && MTD(vault, graph, mtd, ei)>k
-            && (!evicted[ei] || evicted[ei]>currentEvictionTime)) {
-          td[revIdx[ei]] = td[ei] = td[ei]-1;
-          if(td[ei]==k)
-            propagateEviction(vault, graph, evicted, mtd, td, ei, k, evictionTime);
-        }
-        else if(kt[ej]<kt[ei]
-                && MTD(vault, graph, mtd, ej)>k
-                && (!evicted[ej] || evicted[ej]>currentEvictionTime)) {
-          td[revIdx[ej]] = td[ej] = td[ej]-1;
-          if(td[ej]==k)
-            propagateEviction(vault, graph, evicted, mtd, td, ej, k, evictionTime);
-        }
-        else {
-          if(MTD(vault, graph, mtd, ei)>k
-              && MTD(vault, graph, mtd, ej)>k
-              && (!evicted[ei] || evicted[ei]>currentEvictionTime)
-              && (!evicted[ej] || evicted[ej]>currentEvictionTime)) {
-            td[revIdx[ei]] = td[ei] = td[ei]-1;
-            if(td[ei]==k)
-              propagateEviction(vault, graph, evicted, mtd, td, ei, k, evictionTime);
-
-            td[revIdx[ej]] = td[ej] = td[ej]-1;
-            if(td[ej]==k)
-              propagateEviction(vault, graph, evicted, mtd, td, ej, k, evictionTime);
-          }
-        }
-      }
-      starti++; startj++;
-    }
-    else if(adjncy[starti] < adjncy[startj])
-      starti++;
-    else
-      startj++;
-  }
-}
-
-void performDFS(vault_t *vault,
-                gk_graph_t *graph,
-                int8_t *visited,
-                int32_t *evicted,
-                int32_t *ptd,
-                int32_t *mtd,
-                int32_t *td,
-                int32_t e,
-                int32_t k,
-                int32_t *evictionTime) {
-
-  int32_t *adjncy=graph->adjncy, *kt = vault->kt;
-  ssize_t *revIdx = vault->revIdx;
-  int32_t vi=adjncy[e], vj=adjncy[revIdx[e]], ei, ej;
-  int32_t starti = graph->xadj[vi], endi = vault->endIdx[vi];
-  int32_t startj = graph->xadj[vj], endj = vault->endIdx[vj];
-
-  visited[e]=1;
-  visited[revIdx[e]]=1;
-
-  if(td[e] > k) {
-    while(starti<endi && startj<endj) {
-      if(adjncy[starti] == adjncy[startj]) {
-        ei = starti;
-        ej = startj;
-        if(gk_min(kt[ei], kt[ej]) == k) {
-          if(kt[ei]<kt[ej]) {
-            if(MTD(vault, graph, mtd, ei)>k && !visited[ei]) {
-              td[ei] = td[revIdx[ei]] = td[ei] + PTD(vault, graph, ptd, mtd, ei);
-              performDFS(vault, graph, visited, evicted, ptd, mtd, td, ei, k, evictionTime);
-            }
-          }
-          else if(kt[ej]<kt[ei]) {
-            if(MTD(vault, graph, mtd, ej)>k && !visited[ej]) {
-              td[ej] = td[revIdx[ej]] = td[ej] + PTD(vault, graph, ptd, mtd, ej);
-              performDFS(vault, graph, visited, evicted, ptd, mtd, td, ej, k, evictionTime);
-            }
-          }
-          else {
-            if(MTD(vault, graph, mtd, ei)>k && MTD(vault, graph, mtd, ej)>k) {
-              if(!visited[ei]) {
-                td[ei] = td[revIdx[ei]] = td[ei] + PTD(vault, graph, ptd, mtd, ei);
-                performDFS(vault, graph, visited, evicted, ptd, mtd, td, ei, k, evictionTime);
-              }
-              if(!visited[ej]) {
-                td[ej] = td[revIdx[ej]] = td[ej] + PTD(vault, graph, ptd, mtd, ej);
-                performDFS(vault, graph, visited, evicted, ptd, mtd, td, ej, k, evictionTime);
-              }
-            }
-          }
-        }
-        starti++; startj++;
-      }
-      else if(adjncy[starti] < adjncy[startj])
-        starti++;
-      else
-        startj++;
-    }
-  }
-  else {
-    if(!evicted[e])
-      propagateEviction(vault, graph, evicted, mtd, td, e, k, evictionTime);
-  }
-}
-
-void traversalAlgorithm(vault_t *vault,
-                          gk_graph_t *graph,
-                          int32_t refEdge,
-                          int8_t *visited,
-                          int32_t *evicted,
-                          int32_t *trussWiseSupCount,
-                          int32_t *rootEdges,
-                          int32_t rootEdgesCount,
-                          int32_t *ptd,
-                          int32_t *mtd,
-                          int32_t *td,
-                          int32_t *evictionTime) {
-
-  /* Eliminate the root edges which cannot have their truss numbers increased */
-  int32_t ktmax=vault->ktmax;
-  int32_t *kt = vault->kt;
-  ssize_t *revIdx = vault->revIdx;
-  ssize_t *xadj = graph->xadj;
-  int32_t *adjncy = graph->adjncy;
-
-  trussWiseSupCount[vault->ktmax+1]=0;
-  for(int32_t i=vault->ktmax-1; i>=0; i--)
-    trussWiseSupCount[i]+=trussWiseSupCount[i+1];
-
-  int32_t max_kt_possible;
-  for(max_kt_possible=vault->ktmax; max_kt_possible>=0; max_kt_possible--) {
-    if(trussWiseSupCount[max_kt_possible] <= max_kt_possible)
-      continue;
-    break;
-  }
-
-  /* Perform actual traversal */
-  int32_t rooti=0, ei, k, check=1, new_k=0;
-  for(k=max_kt_possible; k>=0; k--) {
-    int32_t count=0;
-    for(rooti=0; rooti<rootEdgesCount; rooti++) {
-      if(kt[rootEdges[rooti]] == k) {
-        if(!visited[rootEdges[rooti]]) {
-          td[rootEdges[rooti]] = td[revIdx[rootEdges[rooti]]] = td[rootEdges[rooti]] + PTD(vault, graph, ptd, mtd, rootEdges[rooti]);
-          performDFS(vault, graph, visited, evicted,
-                    ptd, mtd, td, rootEdges[rooti], k, evictionTime);
-        }
-        if(check) {
-          if(rooti!=rootEdgesCount-1) {
-            if(adjncy[rootEdges[rooti]] == adjncy[rootEdges[rooti+1]]) {
-              if(!evicted[rootEdges[rooti]] && !evicted[rootEdges[rooti+1]])
-                count++;
-              rooti++;
-            }
-            else {
-              if(!evicted[rootEdges[rooti]])
-                count++;
-            }
-          }
-          else {
-            if(!evicted[rootEdges[rooti]])
-              count++;
-          }
-        }
-      }
-    }
-    if(check) {
-      if(count+trussWiseSupCount[k+1] >= k+1) {
-        check = 0;
-        new_k = k+1;
-      }
-    }
-  }
-
-  /* Increase the truss-numbers of the edges */
-  ssize_t nvtxs = vault->graph->nvtxs;
-  for(ei=0; ei<xadj[nvtxs]; ei++) {
-    if(visited[ei] && !evicted[ei] && kt[ei]<new_k) {
-      evicted[ei]=evicted[revIdx[ei]]=INF;
-      kt[ei]++;
-      kt[revIdx[ei]]++;
-
-#ifdef MTD_OPT
-      int32_t v1=adjncy[ei], v2=adjncy[revIdx[ei]], e1, e2, k=kt[ei];
-      int32_t start1 = graph->xadj[v1], end1 = vault->endIdx[v1];
-      int32_t start2 = graph->xadj[v2], end2 = vault->endIdx[v2];
-
-      while(start1<end1 && start2<end2) {
-        if(adjncy[start1] == adjncy[start2]) {
-          e1 = start1;
-          e2 = start2;
-          mtd[e1] = mtd[revIdx[e1]] = mtd[e2] = mtd[revIdx[e2]] = mtd[ei] = mtd[revIdx[ei]]= -1;
-          start1++; start2++;
-        }
-        else if(adjncy[start1] < adjncy[start2])
-          start1++;
-        else
-          start2++;
-      }
-#endif
-
-    }
-  }
-
-  kt[refEdge]=new_k;
-  kt[vault->revIdx[refEdge]]=new_k;
-  vault->ktmax = gk_max(vault->ktmax, new_k);
-}
-
 void stream(params_t *params,
             vault_t *vault,
             char* edgesFile,
             char* outputLocation) {
 
-  int32_t buffer = 100; /* How many edges (max) can it handle */
+  int32_t buffer = 1000; /* How many edges (max) can it handle */
+  /* Initialize timers */
   double totalRuntime = 0.0, addEdgeTime = 0.0, selectRootEdgesTime = 0.0, traversalTime = 0.0;
 
   /* Pre-processing done here */
@@ -538,14 +257,10 @@ void stream(params_t *params,
   ssize_t nvtxs = vault->graph->nvtxs;
   edge_t* inserted_edge = gk_malloc(sizeof(edge_t), "stream: inserted edge");
   int32_t *rootEdges = gk_i32malloc(vault->graph->nvtxs * 2, "stream: Root edges to begin the search space from");
-  int8_t *visited = gk_i8malloc(modifiedGraph->xadj[nvtxs], "stream: visited");
+  int32_t *visited = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: visited");
   int32_t *evicted = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: evicted");
   int32_t *ptd = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: pure truss degree");
-#ifdef MTD_OPT
-  int32_t *mtd = gk_i32smalloc(modifiedGraph->xadj[nvtxs], -1, "stream: maximum truss degree");
-#else
   int32_t *mtd = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: maximum truss degree");
-#endif
   int32_t *td = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: prospective truss degree");
 
   /* Read edges file*/
@@ -573,11 +288,9 @@ void stream(params_t *params,
 
     clearTimers(vault);
     /* Initialize memory */
-    memset(visited, 0, modifiedGraph->xadj[nvtxs] * sizeof(int8_t));
+    memset(visited, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
     memset(evicted, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
-#ifndef MTD_OPT
     memset(mtd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
-#endif
     memset(ptd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
     memset(td, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
 

@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
       );
 
   if(params->stream) {
-    printf("Now Streaming....\n\n\n\n");
+    printf("Now Streaming....\n\n\n");
     char* newEdgesFile = strdup(params->infile);
     char* outputLocation = strdup(params->infile);
     char *ptr = strrchr(newEdgesFile, '/');
