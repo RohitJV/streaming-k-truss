@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
     strcpy(ptr, "/");
     printf("Edges file location : %s,     Output Location : %s",
             newEdgesFile, outputLocation);
-    stream(params, vault, newEdgesFile, outputLocation);
+    stream_v2(params, vault, newEdgesFile, outputLocation);
   }
   else {
     char *ptr = strrchr(params->infile, '/');

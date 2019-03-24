@@ -110,4 +110,29 @@ typedef struct
 } pair_t;
 
 
+/*************************************************************************
+* Data structures for streaming k-truss
+**************************************************************************/
+
+typedef struct eedge_t eedge_t;
+struct eedge_t {
+  int32_t v; /* 4 bytes */
+  eedge_t *revPtr; /* 8 bytes */
+  int8_t k, mtd, ptd, td, visited; /* 1*5 bytes */
+}; /* 4 + 8 + 1*5 = 17 bytes */
+
+typedef struct {
+  int32_t nvtxs;
+  ssize_t *xadj;
+  eedge_t *edges;
+} ggraph_t;
+
+typedef struct edgeblock_t edgeblock_t;
+struct edgeblock_t{
+  int32_t src; /* 4 bytes */
+  /* Change below to an array to include multiple edges in a block? */
+  eedge_t edge; /* 13 bytes */
+  edgeblock_t *next; /* 8 bytes */
+}; /* 25 bytes */
+
 #endif

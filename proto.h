@@ -167,6 +167,7 @@ int64_t kt_snd(params_t *params, vault_t *vault);
 int64_t kt_and(params_t *params, vault_t *vault);
 
 void performTests(params_t *params, vault_t *vault, int selectNewEdge);
-void stream(params_t *params, vault_t *vault, char* edgesFile, char* outputLocation);
+void stream_v1(params_t *params, vault_t *vault, char* edgesFile, char* outputLocation);
+void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLocation);
 
 #endif

@@ -3,7 +3,7 @@
 #define INF 1000000000
 #define MTD_OPT
 
-void clearTimers(vault_t *vault) {
+static void clearTimers(vault_t *vault) {
   gk_clearwctimer(vault->timer_1);
   gk_clearwctimer(vault->timer_2);
   gk_clearwctimer(vault->timer_3);
@@ -21,7 +21,7 @@ void clearTimers(vault_t *vault) {
 /*
 Write the k-truss number of the entire graph into a file
 */
-void writeKTToFile(vault_t *vault,
+static void writeKTToFile(vault_t *vault,
                    gk_graph_t *graph,
                    char* outputFile) {
   FILE *fpout;
@@ -46,7 +46,7 @@ void writeKTToFile(vault_t *vault,
 /*
 Modify the graph for easier traversal
 */
-gk_graph_t* createModifiedGraph(vault_t *vault,
+static gk_graph_t* createModifiedGraph(vault_t *vault,
                                 int buffer) {
   gk_graph_t *original_ugraph = vault->ugraph;
   int32_t nvtxs  = original_ugraph->nvtxs;
@@ -117,7 +117,7 @@ gk_graph_t* createModifiedGraph(vault_t *vault,
   return graph;
 }
 
-void selectRootEdgesForDFS(vault_t *vault,
+static void selectRootEdgesForDFS(vault_t *vault,
                           gk_graph_t *graph,
                           edge_t *inserted_edge,
                           int32_t *trussWiseSupCount,
@@ -154,7 +154,7 @@ void selectRootEdgesForDFS(vault_t *vault,
   }
 }
 
-int32_t addNewEdge(vault_t *vault,
+static int32_t addNewEdge(vault_t *vault,
                 gk_graph_t *graph,
                 edge_t *inserted_edge) {
 
@@ -213,9 +213,9 @@ int32_t addNewEdge(vault_t *vault,
 Returns the number of triangles on an edge 'e', such that the truss number of
 those triangles is atleast K(e).
 */
-int32_t MTD(vault_t *vault,
+static int8_t MTD(vault_t *vault,
             gk_graph_t *graph,
-            int32_t *mtd,
+            int8_t *mtd,
             int32_t e) {
 
   if(mtd[e]!=-1)
@@ -251,10 +251,10 @@ Returns the number of triangles on an edge 'e', such that
 2) The truss number of the triangle is equal to K(e) and the MTD(e) is greater
    than K(e).
 */
-int32_t PTD(vault_t *vault,
+static int8_t PTD(vault_t *vault,
             gk_graph_t *graph,
-            int32_t *ptd,
-            int32_t *mtd,
+            int8_t *ptd,
+            int8_t *mtd,
             int32_t e) {
 
   if(ptd[e]!=-1)
@@ -294,13 +294,13 @@ int32_t PTD(vault_t *vault,
   return (ptd[revIdx[e]] = ptd[e]);
 }
 
-void propagateEviction(vault_t *vault,
+static void propagateEviction(vault_t *vault,
                 gk_graph_t *graph,
                 int32_t *evicted,
-                int32_t *mtd,
-                int32_t *td,
+                int8_t *mtd,
+                int8_t *td,
                 int32_t e,
-                int32_t k,
+                int8_t k,
                 int32_t *evictionTime) {
 
   int32_t *adjncy=graph->adjncy, *kt = vault->kt;
@@ -356,15 +356,15 @@ void propagateEviction(vault_t *vault,
   }
 }
 
-void performDFS(vault_t *vault,
+static void performDFS(vault_t *vault,
                 gk_graph_t *graph,
                 int8_t *visited,
                 int32_t *evicted,
-                int32_t *ptd,
-                int32_t *mtd,
-                int32_t *td,
+                int8_t *ptd,
+                int8_t *mtd,
+                int8_t *td,
                 int32_t e,
-                int32_t k,
+                int8_t k,
                 int32_t *evictionTime) {
 
   int32_t *adjncy=graph->adjncy, *kt = vault->kt;
@@ -421,7 +421,7 @@ void performDFS(vault_t *vault,
   }
 }
 
-void traversalAlgorithm(vault_t *vault,
+static void traversalAlgorithm(vault_t *vault,
                           gk_graph_t *graph,
                           int32_t refEdge,
                           int8_t *visited,
@@ -429,9 +429,9 @@ void traversalAlgorithm(vault_t *vault,
                           int32_t *trussWiseSupCount,
                           int32_t *rootEdges,
                           int32_t rootEdgesCount,
-                          int32_t *ptd,
-                          int32_t *mtd,
-                          int32_t *td,
+                          int8_t *ptd,
+                          int8_t *mtd,
+                          int8_t *td,
                           int32_t *evictionTime) {
 
   /* Eliminate the root edges which cannot have their truss numbers increased */
@@ -525,12 +525,12 @@ void traversalAlgorithm(vault_t *vault,
   vault->ktmax = gk_max(vault->ktmax, new_k);
 }
 
-void stream(params_t *params,
+void stream_v1(params_t *params,
             vault_t *vault,
             char* edgesFile,
             char* outputLocation) {
 
-  int32_t buffer = 100; /* How many edges (max) can it handle */
+  int32_t buffer = 10; /* How many edges (max) can it handle */
   double totalRuntime = 0.0, addEdgeTime = 0.0, selectRootEdgesTime = 0.0, traversalTime = 0.0;
 
   /* Pre-processing done here */
@@ -540,13 +540,13 @@ void stream(params_t *params,
   int32_t *rootEdges = gk_i32malloc(vault->graph->nvtxs * 2, "stream: Root edges to begin the search space from");
   int8_t *visited = gk_i8malloc(modifiedGraph->xadj[nvtxs], "stream: visited");
   int32_t *evicted = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: evicted");
-  int32_t *ptd = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: pure truss degree");
+  int8_t *ptd = gk_i8malloc(modifiedGraph->xadj[nvtxs], "stream: pure truss degree");
 #ifdef MTD_OPT
-  int32_t *mtd = gk_i32smalloc(modifiedGraph->xadj[nvtxs], -1, "stream: maximum truss degree");
+  int8_t *mtd = gk_i8smalloc(modifiedGraph->xadj[nvtxs], -1, "stream: maximum truss degree");
 #else
-  int32_t *mtd = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: maximum truss degree");
+  int8_t *mtd = gk_i8malloc(modifiedGraph->xadj[nvtxs], "stream: maximum truss degree");
 #endif
-  int32_t *td = gk_i32malloc(modifiedGraph->xadj[nvtxs], "stream: prospective truss degree");
+  int8_t *td = gk_i8malloc(modifiedGraph->xadj[nvtxs], "stream: prospective truss degree");
 
   /* Read edges file*/
   FILE *fpin=NULL;
@@ -576,10 +576,10 @@ void stream(params_t *params,
     memset(visited, 0, modifiedGraph->xadj[nvtxs] * sizeof(int8_t));
     memset(evicted, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
 #ifndef MTD_OPT
-    memset(mtd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
+    memset(mtd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int8_t));
 #endif
-    memset(ptd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
-    memset(td, 0, modifiedGraph->xadj[nvtxs] * sizeof(int32_t));
+    memset(ptd, -1, modifiedGraph->xadj[nvtxs] * sizeof(int8_t));
+    memset(td, 0, modifiedGraph->xadj[nvtxs] * sizeof(int8_t));
 
     gk_startwctimer(vault->timer_global);
     printf("Inserted Edge %d: (%d, %d)\n", i, vtx1-1, vtx2-1);
@@ -631,10 +631,10 @@ void stream(params_t *params,
     gk_fclose(fpout);
   }
 
-  printf("Total addEdgeTime Runtime : %.2lf\n", addEdgeTime);
-  printf("Total selectRootEdgesTime Runtime : %.2lf\n", selectRootEdgesTime);
-  printf("Total Incremental traversalTime : %.2lf\n", traversalTime);
-  printf("Total Incremental Runtime : %.2lf\n", totalRuntime);
+  printf("Total addEdgeTime Runtime : %.6lf\n", addEdgeTime);
+  printf("Total selectRootEdgesTime Runtime : %.6lf\n", selectRootEdgesTime);
+  printf("Total Incremental traversalTime : %.6lf\n", traversalTime);
+  printf("Total Incremental Runtime : %.6lf\n", totalRuntime);
 
   /* Cleanup */
   gk_free((void **)&inserted_edge, LTERM);
