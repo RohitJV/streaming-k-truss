@@ -9,7 +9,7 @@
 #define EVICT_EDGES 12
 
 #define QUEUE_SIZE 10
-#define SEARCHSPACE_QUEUE_SIZE 1000
+#define SEARCHSPACE_QUEUE_SIZE 1000000
 
 typedef struct {
   int32_t front, rear, size;
@@ -26,6 +26,11 @@ typedef struct {
   eedge_t *e;
   int32_t k;
 } searchSpace_struct;
+
+typedef struct {
+  edgeblock_t* edgeBlock;
+  int32_t len;
+} hashMapEntry_struct;
 
 static void clearTimers(vault_t *vault) {
   gk_clearwctimer(vault->timer_1);
@@ -55,6 +60,8 @@ static void writeKTToFile(vault_t *vault, ggraph_t *graph, edgeblock_t **hmap, c
   /* Print the truss numbers of the static graph */
   for(vi=0;vi<nvtxs;vi++) {
     for(ei=xadj[vi];ei<xadj[vi+1];ei++) {
+      // printf("%7d %7d %4d\n",
+      //        vault->iperm[vi]+1, vault->iperm[adjncy[ei].v]+1, adjncy[ei].k+2);
       fprintf(fpout, "%7d %7d %4d\n",
               vault->iperm[vi]+1, vault->iperm[adjncy[ei].v]+1, adjncy[ei].k+2);
     }
@@ -63,6 +70,8 @@ static void writeKTToFile(vault_t *vault, ggraph_t *graph, edgeblock_t **hmap, c
   for(int32_t i=0; i<HMAP_SIZE; i++) {
     edgeblock_t *cur=hmap[i];
     while(cur!=NULL) {
+    	// printf("%7d %7d %4d\n",
+      //       vault->iperm[cur->edge.v]+1, vault->iperm[(cur->edge.revPtr)->v]+1, cur->edge.k+2);
 	    fprintf(fpout, "%7d %7d %4d\n",
               vault->iperm[cur->edge.v]+1, vault->iperm[(cur->edge.revPtr)->v]+1, cur->edge.k+2);
       cur=cur->next;
@@ -109,9 +118,7 @@ static ggraph_t* createModifiedGraph(vault_t *vault) {
       adjncy[ei].v = vj; adjncy[ej].v = vi;
       adjncy[ei].revPtr = &adjncy[ej]; adjncy[ej].revPtr = &adjncy[ei];
       adjncy[ei].k = adjncy[ej].k = vault->ktedges[e].k-2;
-#ifdef TEST_V2
-      adjncy[ei].mtd = adjncy[ei].ptd = 1; adjncy[ej].mtd = adjncy[ej].ptd = 0;
-#endif
+      // adjncy[ei].mtd = adjncy[ei].ptd = 1; adjncy[ej].mtd = adjncy[ej].ptd = 0;
       adjncy[ei].td = adjncy[ei].visited = adjncy[ej].td = adjncy[ej].visited = 0;
     }
   }
@@ -162,23 +169,12 @@ static int32_t* readNewEdges(char* edgesFile, ggraph_t *modifiedGraph, vault_t *
 }
 
 static void insertToHmapChain(edgeblock_t **head, edgeblock_t *edgeBlock) {
-  edgeblock_t *prev=NULL, *cur=*head;
-  int32_t v = edgeBlock->edge.v;
-  while(cur!=NULL && cur->edge.v < v) {
-    prev=cur;
-    cur=cur->next;
-  }
-  if(prev!=NULL) {
-    edgeBlock->next = prev->next;
-    prev->next=edgeBlock;
-  }
-  else {
-    edgeBlock->next = *head;
-    *head=edgeBlock;
-  }
+  edgeblock_t *cur=*head;
+  edgeBlock->next = *head;
+  *head=edgeBlock;
 }
 
-static edgeblock_t* addNewEdge(vault_t *vault, edgeblock_t **hmap, int32_t vi, int32_t vj) {
+static edgeblock_t* addNewEdge(vault_t *vault, edgeblock_t **hmap, int32_t* listSize, int32_t vi, int32_t vj) {
   int32_t hval;
 
   /* Find the correct location in hmap to place the new edge */
@@ -186,6 +182,7 @@ static edgeblock_t* addNewEdge(vault_t *vault, edgeblock_t **hmap, int32_t vi, i
   /* Place the new edge into chain at the hmap location */
   edgeblock_t *edgeBlock1 = gk_malloc(sizeof(edgeblock_t), "addNewEdge: create a new edgeblock");
   edgeBlock1->src = vi; edgeBlock1->edge.v=vj; edgeBlock1->next=NULL;
+  listSize[hval]++;
   if(hmap[hval]==NULL)
     hmap[hval]=edgeBlock1;
   else
@@ -197,6 +194,7 @@ static edgeblock_t* addNewEdge(vault_t *vault, edgeblock_t **hmap, int32_t vi, i
   /* Place the new edge into chain at the hmap location */
   edgeblock_t *edgeBlock2 = gk_malloc(sizeof(edgeblock_t), "addNewEdge: create a new edgeblock");
   edgeBlock2->src = vj; edgeBlock2->edge.v=vi; edgeBlock2->next=NULL;
+  listSize[hval]++;
   if(hmap[hval]==NULL)
     hmap[hval]=edgeBlock2;
   else
@@ -207,201 +205,287 @@ static edgeblock_t* addNewEdge(vault_t *vault, edgeblock_t **hmap, int32_t vi, i
   edgeBlock1->edge.k = edgeBlock2->edge.k = vault->ktmax + 10;
   edgeBlock1->edge.td = edgeBlock1->edge.visited = 0;
   edgeBlock2->edge.td = edgeBlock2->edge.visited = 0;
-#ifdef TEST_V2
-  edgeBlock1->edge.mtd = edgeBlock1->edge.ptd = 0;
-  edgeBlock2->edge.mtd = edgeBlock2->edge.ptd = 0;
-#endif
+  // edgeBlock1->edge.mtd = edgeBlock1->edge.ptd = 0;
+  // edgeBlock2->edge.mtd = edgeBlock2->edge.ptd = 0;
 
   return edgeBlock1;
 }
 
-static edgeblock_t* findMapEntry(edgeblock_t **hmap, int32_t vtx) {
+static hashMapEntry_struct* findMapEntry(edgeblock_t **hmap, int32_t* listSize, int32_t vtx) {
   int32_t hval;
   for(hval = vtx&(HMAP_SIZE-1); hmap[hval]!=NULL && hmap[hval]->src!=vtx; hval=(hval+1)&(HMAP_SIZE-1));
-  return hmap[hval];
+  hashMapEntry_struct* result = gk_malloc(sizeof(hashMapEntry_struct), "hashMapEntry_struct");
+  result->edgeBlock = hmap[hval];
+  result->len = listSize[hval];
+  return result;
 }
 
-static int64_t intersectLists(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap,
+static int64_t intersectLists(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t* listSize,
                            int32_t vi, int32_t vj, void* result, int8_t optype) {
 
   int32_t starti = modifiedGraph->xadj[vi], startj = modifiedGraph->xadj[vj];
   int32_t endi = modifiedGraph->xadj[vi+1], endj = modifiedGraph->xadj[vj+1];
   eedge_t *adjncy = modifiedGraph->edges;
-  edgeblock_t *ptri=findMapEntry(hmap, vi), *ptrj=findMapEntry(hmap, vj);
+  hashMapEntry_struct *resi=findMapEntry(hmap, listSize, vi), *resj=findMapEntry(hmap, listSize, vj);
+  edgeblock_t *ptri=resi->edgeBlock, *ptrj=resj->edgeBlock;
+  int32_t leni=resi->len, lenj=resj->len;
+  gk_free((void **)&resi, LTERM);
+  gk_free((void **)&resj, LTERM);
   eedge_t *ei, *ej;
+  int32_t hval;
   int64_t ntriangles = 0;
-  int32_t count = 0;
 
-  while((starti<endi || ptri!=NULL) && (startj<endj || ptrj!=NULL)) { /* This guarantees that we have reached the end of the actual adjancency lists */
-    ntriangles++;
-    /* Get the actual current entry from vi's adjacency list */
-    int8_t flagi, flagj, flag = 3;
-    if(ptri!=NULL && starti<endi) {
-      if(ptri->edge.v < adjncy[starti].v) {
-        ei = &(ptri->edge);
-        flagi = STREAM_ADJ;
-      }
-      else {
-        ei = &adjncy[starti];
-        flagi = STATIC_ADJ;
-      }
-    }
-    else if(ptri!=NULL) {
-      ei = &(ptri->edge);
-      flagi = STREAM_ADJ;
-    }
-    else {
-      ei = &adjncy[starti];
-      flagi = STATIC_ADJ;
-    }
-    /* Repeat for vj */
-    if(ptrj!=NULL && startj<endj) {
-      if(ptrj->edge.v < adjncy[startj].v) {
-        ej = &(ptrj->edge);
-        flagj = STREAM_ADJ;
-      }
-      else {
-        ej = &adjncy[startj];
-        flagj = STATIC_ADJ;
-      }
-    }
-    else if(ptrj!=NULL) {
-      ej = &(ptrj->edge);
-      flagj = STREAM_ADJ;
-    }
-    else {
-      ej = &adjncy[startj];
-      flagj = STATIC_ADJ;
-    }
-
-    /* Perform operations on the 2 edges, if they share a common vertex*/
-    if(ei->v == ej->v) {
-      /* Pick the edge with the lower K(.) */
-      int8_t minK;
-      eedge_t *minE, *theOtherE=NULL;
-      if(ei->k < ej->k) {
-        minK=ei->k;
-        minE=ei;
-      }
-      else if(ei->k == ej->k) {
-        minK=ei->k;
-        minE=ei;
-        theOtherE=ej;
-      }
-      else {
-        minK=ej->k;
-        minE=ej;
-      }
-
-      if(optype == SELECT_ROOT_EDGES) {
-        rootEdges_struct *rootEdges = (rootEdges_struct *)result;
-        int32_t pos = ++(rootEdges->queue[minK].rear);
-        //printf("%d %d\n", minK, rootEdges->queue[minK].size);
-        if(pos==rootEdges->queue[minK].size-1) {
-          //printf("Realloc!\n");
-          rootEdges->queue[minK].size = rootEdges->queue[minK].size * 2;
-          rootEdges->queue[minK].edgelist = gk_realloc(rootEdges->queue[minK].edgelist, sizeof(eedge_t*) * rootEdges->queue[minK].size,
-                                                        "selectRootEdges : realloc queue of edges for a value of K(.)");
-        }
-        rootEdges->queue[minK].edgelist[pos]=minE;
-      }
-      else if(optype == EXPLORE_SEARCHSPACE) {
-	      //printf("\nExplore: (%d,%d), %d", vault->iperm[vi]+1, vault->iperm[vj]+1, vault->iperm[ei->v]+1);
-        searchSpace_struct *searchSpace = (searchSpace_struct *)result;
-        eedge_t *e = searchSpace->e;
-        edge_q *searchQueue = searchSpace->queue;
-        if(minK>=searchSpace->k) {
-          e->td++;
-          e->revPtr->td++;
-        }
-        if(minK==searchSpace->k && !minE->visited) {
-          minE->visited = 1;
-          minE->revPtr->visited = 1;
-          searchQueue->rear++;
-          count++;
-          if(searchQueue->rear == searchQueue->size) {
-            searchQueue->size *= 2;
-            searchQueue->edgelist = gk_realloc(searchQueue->edgelist,  sizeof(eedge_t*) * searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
-          }
-          searchQueue->edgelist[searchQueue->rear] = minE;
-        }
-      	if(minK==searchSpace->k && theOtherE!=NULL && !theOtherE->visited) {
-      	  theOtherE->visited = 1;
-          theOtherE->revPtr->visited = 1;
-          searchQueue->rear++;
-          count++;
-          if(searchQueue->rear == searchQueue->size) {
-            searchQueue->size *= 2;
-            searchQueue->edgelist = gk_realloc(searchQueue->edgelist,  sizeof(eedge_t*) * searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
-          }
-          searchQueue->edgelist[searchQueue->rear] = theOtherE;
-      	}
-      }
-      else if(optype == EVICT_EDGES) {
-        searchSpace_struct *searchSpace = (searchSpace_struct *)result;
-        eedge_t *e = searchSpace->e;
-        edge_q *evictionQueue = searchSpace->queue;
-        /*
-        Consider only the triangles with minK = k, and
-        --> If one of the edges of the triangle was already evicted, the other edge already had its truss-degree reduced due to this triangle.
-            So, skip reducing the truss-degree of the other edge.
-        --> Otherwise, push the edge(s) with K(.)=k to the eviction queue, as long as they don't already exist there.
-        */
-        if(minK==searchSpace->k && minE->visited!=-2 && (theOtherE==NULL || theOtherE->visited!=-2)) {
-          minE->td--;
-          minE->revPtr->td--;
-          if(theOtherE!=NULL) {
-            theOtherE->td--;
-            theOtherE->revPtr->td--;
-          }
-          if(minE->td<=searchSpace->k && minE->visited!=-1) { /* Insert minE to the eviction queue if it is not already there */
-            minE->visited=-1;
-            minE->revPtr->visited=-1;
-            evictionQueue->rear++;
-            if(evictionQueue->rear == evictionQueue->size) {
-              evictionQueue->size *= 2;
-              evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist,  sizeof(eedge_t*) * evictionQueue->size, "updateTrussNumbers : realloc eviction list");
-            }
-            evictionQueue->edgelist[evictionQueue->rear] = minE;
-          }
-          if(theOtherE!=NULL && theOtherE->td<=searchSpace->k && theOtherE->visited!=-1) { /* Insert theOtherE to the eviction queue if it is not already there */
-            theOtherE->visited=-1;
-            theOtherE->revPtr->visited=-1;
-            evictionQueue->rear++;
-            if(evictionQueue->rear == evictionQueue->size) {
-              evictionQueue->size *= 2;
-              evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist, sizeof(eedge_t*) *  evictionQueue->size, "updateTrussNumbers : realloc eviction list");
-            }
-            evictionQueue->edgelist[evictionQueue->rear] = theOtherE;
-          }
-        }
-      }
-    }
-
-    /* Increment edge pointers appropriately. */
-    int32_t vali = ei->v, valj = ej->v;
-    if(vali < valj) /* Increment ei */
-      flag = 2;
-    else if(vali > valj) /* Increment ej */
-      flag = 1;
-    if(flag & 2) { /* Increment ei */
-      if(flagi == STATIC_ADJ)
-        starti++;
-      else
-        ptri=ptri->next;
-    }
-    if(flag & 1) { /* Increment ej */
-      if(flagj == STATIC_ADJ)
-        startj++;
-      else
-        ptrj=ptrj->next;
-    }
+  /* Insert one adjacency list into hmap */
+  int32_t hmsize = endi-starti + leni, l;
+  for (l=1; hmsize>(1<<l); l++);
+  hmsize = (1<<(l+3));
+  // printf("HMSIZE %d\n", hmsize);
+  eedge_t **hmap_adj = gk_malloc(sizeof(eedge_t*) * hmsize, "intersectLists : hmap_adj");
+  for(int32_t i=0;i<hmsize;i++)
+    hmap_adj[i] = NULL;
+  while(starti<endi) {
+    int32_t v = adjncy[starti].v;
+    for(hval = v&(hmsize-1); hmap_adj[hval]!=NULL; hval=(hval+1)&(hmsize-1));
+    hmap_adj[hval] = &adjncy[starti];
+    starti++;
+  }
+  while(ptri!=NULL) {
+    int32_t v = ptri->edge.v;
+    for(hval = v&(hmsize-1); hmap_adj[hval]!=NULL; hval=(hval+1)&(hmsize-1));
+    hmap_adj[hval]=&(ptri->edge);
+    ptri = ptri->next;
   }
 
+  /* Search in hmap for the other adjacency list */
+  while(startj<endj) {
+    int32_t v = adjncy[startj].v;
+    for(hval = v&(hmsize-1); hmap_adj[hval]!=NULL && hmap_adj[hval]->v!=v; hval=(hval+1)&(hmsize-1));
+    if(hmap_adj[hval]==NULL) {
+      startj++;
+      continue;
+    }
+    /* Intersection found */
+    ei = hmap_adj[hval];
+    ej = &adjncy[startj];
+    ntriangles++;
+
+    /* Pick the edge with the lower K(.) */
+    int8_t minK;
+    eedge_t *minE, *theOtherE=NULL;
+    if(ei->k < ej->k) {
+      minK=ei->k;
+      minE=ei;
+    }
+    else if(ei->k == ej->k) {
+      minK=ei->k;
+      minE=ei;
+      theOtherE=ej;
+    }
+    else {
+      minK=ej->k;
+      minE=ej;
+    }
+
+    if(optype == SELECT_ROOT_EDGES) {
+      rootEdges_struct *rootEdges = (rootEdges_struct *)result;
+      int32_t pos = ++(rootEdges->queue[minK].rear);
+      //printf("%d %d\n", minK, rootEdges->queue[minK].size);
+      if(pos==rootEdges->queue[minK].size-1) {
+        //printf("Realloc!\n");
+        rootEdges->queue[minK].size = rootEdges->queue[minK].size * 2;
+        rootEdges->queue[minK].edgelist = gk_realloc(rootEdges->queue[minK].edgelist, sizeof(eedge_t*) *rootEdges->queue[minK].size,
+                                                      "selectRootEdges : realloc queue of edges for a value of K(.)");
+      }
+      rootEdges->queue[minK].edgelist[pos]=minE;
+    }
+    else if(optype == EXPLORE_SEARCHSPACE) {
+      //printf("\nExplore: (%d,%d), %d", vault->iperm[vi]+1, vault->iperm[vj]+1, vault->iperm[ei->v]+1);
+      searchSpace_struct *searchSpace = (searchSpace_struct *)result;
+      eedge_t *e = searchSpace->e;
+      edge_q *searchQueue = searchSpace->queue;
+      if(minK>=searchSpace->k) {
+        e->td++;
+        e->revPtr->td++;
+      }
+      if(minK==searchSpace->k && !minE->visited) {
+        minE->visited = 1;
+        minE->revPtr->visited = 1;
+        searchQueue->rear++;
+        if(searchQueue->rear == searchQueue->size) {
+          searchQueue->size*=2;
+          searchQueue->edgelist = gk_realloc(searchQueue->edgelist, searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+        }
+        searchQueue->edgelist[searchQueue->rear] = minE;
+      }
+      if(minK==searchSpace->k && theOtherE!=NULL && !theOtherE->visited) {
+        theOtherE->visited = 1;
+        theOtherE->revPtr->visited = 1;
+        searchQueue->rear++;
+        if(searchQueue->rear == searchQueue->size) {
+          searchQueue->size*=2;
+          searchQueue->edgelist = gk_realloc(searchQueue->edgelist, searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+        }
+        searchQueue->edgelist[searchQueue->rear] = theOtherE;
+      }
+    }
+    else if(optype == EVICT_EDGES) {
+      searchSpace_struct *searchSpace = (searchSpace_struct *)result;
+      eedge_t *e = searchSpace->e;
+      edge_q *evictionQueue = searchSpace->queue;
+      /*
+      Consider only the triangles with minK = k, and
+      --> If one of the edges of the triangle was already evicted, the other edge already had its truss-degree reduced due to this triangle.
+          So, skip reducing the truss-degree of the other edge.
+      --> Otherwise, push the edge(s) with K(.)=k to the eviction queue, as long as they don't already exist there.
+      */
+      if(minK==searchSpace->k && minE->visited!=-2 && (theOtherE==NULL || theOtherE->visited!=-2)) {
+        minE->td--;
+        minE->revPtr->td--;
+        if(theOtherE!=NULL) {
+          theOtherE->td--;
+          theOtherE->revPtr->td--;
+        }
+        if(minE->td<=searchSpace->k && minE->visited!=-1) { /* Insert minE to the eviction queue if it is not already there */
+          minE->visited=-1;
+          minE->revPtr->visited=-1;
+          evictionQueue->rear++;
+          if(evictionQueue->rear == evictionQueue->size) {
+            evictionQueue->size*=2;
+            evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist, evictionQueue->size, "updateTrussNumbers : realloc eviction list");
+          }
+          evictionQueue->edgelist[evictionQueue->rear] = minE;
+        }
+        if(theOtherE!=NULL && theOtherE->td<=searchSpace->k && theOtherE->visited!=-1) { /* Insert theOtherE to the eviction queue if it is not already there */
+          theOtherE->visited=-1;
+          theOtherE->revPtr->visited=-1;
+          evictionQueue->rear++;
+          if(evictionQueue->rear == evictionQueue->size) {
+            evictionQueue->size*=2;
+            evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist, evictionQueue->size, "updateTrussNumbers : realloc eviction list");
+          }
+          evictionQueue->edgelist[evictionQueue->rear] = theOtherE;
+        }
+      }
+    }
+
+    startj++;
+  }
+  while(ptrj!=NULL) {
+    int32_t v = ptrj->edge.v;
+    for(hval = v&(hmsize-1); hmap_adj[hval]!=NULL && hmap_adj[hval]->v!=v; hval=(hval+1)&(hmsize-1));
+    if(hmap_adj[hval]==NULL) {
+      ptrj = ptrj->next;
+      continue;
+    }
+    /* Intersection found */
+    ei = hmap_adj[hval];
+    ej = &(ptrj->edge);
+    ntriangles++;
+
+    /* Pick the edge with the lower K(.) */
+    int8_t minK;
+    eedge_t *minE, *theOtherE=NULL;
+    if(ei->k < ej->k) {
+      minK=ei->k;
+      minE=ei;
+    }
+    else if(ei->k == ej->k) {
+      minK=ei->k;
+      minE=ei;
+      theOtherE=ej;
+    }
+    else {
+      minK=ej->k;
+      minE=ej;
+    }
+
+    if(optype == SELECT_ROOT_EDGES) {
+      rootEdges_struct *rootEdges = (rootEdges_struct *)result;
+      int32_t pos = ++(rootEdges->queue[minK].rear);
+      if(pos==rootEdges->queue[minK].size-1) {
+        rootEdges->queue[minK].size = rootEdges->queue[minK].size * 2;
+        rootEdges->queue[minK].edgelist = gk_realloc(rootEdges->queue[minK].edgelist, sizeof(eedge_t*) *rootEdges->queue[minK].size,
+                                                      "selectRootEdges : realloc queue of edges for a value of K(.)");
+      }
+      rootEdges->queue[minK].edgelist[pos]=minE;
+    }
+    else if(optype == EXPLORE_SEARCHSPACE) {
+      //printf("\nExplore: (%d,%d), %d", vault->iperm[vi]+1, vault->iperm[vj]+1, vault->iperm[ei->v]+1);
+      searchSpace_struct *searchSpace = (searchSpace_struct *)result;
+      eedge_t *e = searchSpace->e;
+      edge_q *searchQueue = searchSpace->queue;
+      if(minK>=searchSpace->k) {
+        e->td++;
+        e->revPtr->td++;
+      }
+      if(minK==searchSpace->k && !minE->visited) {
+        minE->visited = 1;
+        minE->revPtr->visited = 1;
+        searchQueue->rear++;
+        if(searchQueue->rear == searchQueue->size) {
+          searchQueue->size*=2;
+          searchQueue->edgelist = gk_realloc(searchQueue->edgelist, searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+        }
+        searchQueue->edgelist[searchQueue->rear] = minE;
+      }
+      if(minK==searchSpace->k && theOtherE!=NULL && !theOtherE->visited) {
+        theOtherE->visited = 1;
+        theOtherE->revPtr->visited = 1;
+        searchQueue->rear++;
+        if(searchQueue->rear == searchQueue->size) {
+          searchQueue->size*=2;
+          searchQueue->edgelist = gk_realloc(searchQueue->edgelist, searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+        }
+        searchQueue->edgelist[searchQueue->rear] = theOtherE;
+      }
+    }
+    else if(optype == EVICT_EDGES) {
+      searchSpace_struct *searchSpace = (searchSpace_struct *)result;
+      eedge_t *e = searchSpace->e;
+      edge_q *evictionQueue = searchSpace->queue;
+      /*
+      Consider only the triangles with minK = k, and
+      --> If one of the edges of the triangle was already evicted, the other edge already had its truss-degree reduced due to this triangle.
+          So, skip reducing the truss-degree of the other edge.
+      --> Otherwise, push the edge(s) with K(.)=k to the eviction queue, as long as they don't already exist there.
+      */
+      if(minK==searchSpace->k && minE->visited!=-2 && (theOtherE==NULL || theOtherE->visited!=-2)) {
+        minE->td--;
+        minE->revPtr->td--;
+        if(theOtherE!=NULL) {
+          theOtherE->td--;
+          theOtherE->revPtr->td--;
+        }
+        if(minE->td<=searchSpace->k && minE->visited!=-1) { /* Insert minE to the eviction queue if it is not already there */
+          minE->visited=-1;
+          minE->revPtr->visited=-1;
+          evictionQueue->rear++;
+          if(evictionQueue->rear == evictionQueue->size) {
+            evictionQueue->size*=2;
+            evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist, evictionQueue->size, "updateTrussNumbers : realloc eviction list");
+          }
+          evictionQueue->edgelist[evictionQueue->rear] = minE;
+        }
+        if(theOtherE!=NULL && theOtherE->td<=searchSpace->k && theOtherE->visited!=-1) { /* Insert theOtherE to the eviction queue if it is not already there */
+          theOtherE->visited=-1;
+          theOtherE->revPtr->visited=-1;
+          evictionQueue->rear++;
+          if(evictionQueue->rear == evictionQueue->size) {
+            evictionQueue->size*=2;
+            evictionQueue->edgelist = gk_realloc(evictionQueue->edgelist, evictionQueue->size, "updateTrussNumbers : realloc eviction list");
+          }
+          evictionQueue->edgelist[evictionQueue->rear] = theOtherE;
+        }
+      }
+    }
+    ptrj = ptrj->next;
+  }
+
+  gk_free((void **)&hmap_adj, LTERM);
   return ntriangles;
 }
 
-static rootEdges_struct* selectRootEdges(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t vi, int32_t vj) {
+static rootEdges_struct* selectRootEdges(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t* listSize, int32_t vi, int32_t vj) {
   rootEdges_struct *rootEdges = gk_malloc(sizeof(rootEdges_struct), "selectRootEdges : rootEdges_struct");
   rootEdges->ktmax = vault->ktmax;
   rootEdges->queue = gk_malloc(sizeof(edge_q) * (vault->ktmax+1), "selectRootEdges : array of queue of edges for each value of K(.)");
@@ -410,7 +494,7 @@ static rootEdges_struct* selectRootEdges(vault_t *vault, ggraph_t *modifiedGraph
     rootEdges->queue[i].size = QUEUE_SIZE;
     rootEdges->queue[i].edgelist = gk_malloc(sizeof(eedge_t*) * QUEUE_SIZE, "selectRootEdges : queue of edges for a value of K(.)");
   }
-  int64_t ntriangles = intersectLists(vault, modifiedGraph, hmap, vi, vj, (void *)rootEdges, SELECT_ROOT_EDGES);
+  int64_t ntriangles = intersectLists(vault, modifiedGraph, hmap, listSize, vi, vj, (void *)rootEdges, SELECT_ROOT_EDGES);
   int32_t suffixsum = 0;
   int32_t local_ktmax;
   for(local_ktmax=vault->ktmax; local_ktmax>=0; local_ktmax--) {
@@ -423,7 +507,7 @@ static rootEdges_struct* selectRootEdges(vault_t *vault, ggraph_t *modifiedGraph
   return rootEdges;
 }
 
-static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t vi, int32_t vj, edgeblock_t* inserted_edge, rootEdges_struct *rootEdges) {
+static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t* listSize, int32_t vi, int32_t vj, edgeblock_t* inserted_edge, rootEdges_struct *rootEdges) {
   /* Run the algorithm for each K(.) from local_ktmax down to 2 */
   int8_t isKFound = 0;
   int32_t suffixsum = 0;
@@ -457,8 +541,8 @@ static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeb
       cur_edge->revPtr->visited = 1;
       searchQueue->rear++;
       if(searchQueue->rear == searchQueue->size) {
-        searchQueue->size *= 2;
-        searchQueue->edgelist = gk_realloc(searchQueue->edgelist,  sizeof(eedge_t*) * searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+        searchQueue->size*=2;
+        searchQueue->edgelist = gk_realloc(searchQueue->edgelist, searchQueue->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
       }
       searchQueue->edgelist[searchQueue->rear] = cur_edge;
     }
@@ -476,21 +560,22 @@ static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeb
       eedge_t* cur_edge = searchQueue->edgelist[++f];
       int32_t Vj = cur_edge->v, Vi = cur_edge->revPtr->v;
       search_s.e = cur_edge;
-      ntriangles += intersectLists(vault, modifiedGraph, hmap, Vi, Vj, (void *)&search_s, EXPLORE_SEARCHSPACE);
+      ntriangles += intersectLists(vault, modifiedGraph, hmap, listSize, Vi, Vj, (void *)&search_s, EXPLORE_SEARCHSPACE);
       if(cur_edge->td <= k) {
+        //printf("Not enough truss-degree for (%d,%d)", vault->iperm[cur_edge->v]+1, vault->iperm[cur_edge->revPtr->v]+1);
         evictionList->rear++;
         if(evictionList->rear == evictionList->size) {
-          evictionList->size *= 2;
-          evictionList->edgelist = gk_realloc(evictionList->edgelist,  sizeof(eedge_t*) * evictionList->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
+          evictionList->size*=2;
+          evictionList->edgelist = gk_realloc(evictionList->edgelist, evictionList->size, "updateTrussNumbers : realloc queue of edges in the initial search space");
         }
         evictionList->edgelist[evictionList->rear] = cur_edge;
         cur_edge->visited = -1; /* visited = -1 corresponds to an edge being added to the eviction queue */
         cur_edge->revPtr->visited = -1;
       }
     }
+
     visitedEdgeCount += (searchQueue->rear+1);
     evictedEdgeCount += (evictionList->rear+1);
-
     /* Evict the edges in the eviction queue */
     search_s.queue = evictionList;
     f = evictionList->front;
@@ -498,7 +583,7 @@ static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeb
       eedge_t* cur_edge = evictionList->edgelist[++f];
       int32_t Vj = cur_edge->v, Vi = cur_edge->revPtr->v;
       search_s.e = cur_edge;
-      ntriangles += intersectLists(vault, modifiedGraph, hmap, Vi, Vj, (void *)&search_s, EVICT_EDGES);
+      ntriangles += intersectLists(vault, modifiedGraph, hmap, listSize, Vi, Vj, (void *)&search_s, EVICT_EDGES);
       cur_edge->visited = -2; /* visited = -2 corresponds to this edge being evicted,
                                  and all support triangles having their truss-degree reduced */
       cur_edge->revPtr->visited = -2;
@@ -519,7 +604,6 @@ static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeb
         if(cur_edge->visited==1)
           cnt++;
       }
-
       if(suffixsum+cnt > k) {
         isKFound = 1;
         inserted_edge->edge.k = k+1;
@@ -563,23 +647,7 @@ static int64_t updateTrussNumbers(vault_t *vault, ggraph_t *modifiedGraph, edgeb
   return ntriangles;
 }
 
-static void printAdjList(ggraph_t *modifiedGraph, edgeblock_t **hmap, int32_t v) {
-  printf("\nAdjancency list of the vertex : %d\n", v);
-  int32_t start = modifiedGraph->xadj[v], end = modifiedGraph->xadj[v+1];
-  eedge_t *adjncy = modifiedGraph->edges;
-  edgeblock_t *ptr=findMapEntry(hmap, v);
-
-  while(start < end) {
-    printf("%d(o), ", adjncy[start].v);
-    start++;
-  }
-  while(ptr!=NULL) {
-    printf("%d(+), ", ptr->edge.v);
-    ptr=ptr->next;
-  }
-}
-
-void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLocation) {
+void stream_v3(params_t *params, vault_t *vault, char* edgesFile, char* outputLocation) {
   double totalRuntime = 0.0, addEdgeTime = 0.0, selectRootEdgesTime = 0.0, traversalTime = 0.0;
   int64_t ntriangles = 0;
 
@@ -587,8 +655,11 @@ void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLo
   ggraph_t *modifiedGraph = createModifiedGraph(vault); /* Create the new graph */
 
   edgeblock_t *hmap[HMAP_SIZE];
-  for(int32_t i=0; i<HMAP_SIZE; i++)
+  int32_t listSize[HMAP_SIZE];
+  for(int32_t i=0; i<HMAP_SIZE; i++) {
     hmap[i]=NULL;
+    listSize[i]=0;
+  }
 
   /* Read new edges from file */
   int32_t *newEdges = readNewEdges(edgesFile, modifiedGraph, vault);
@@ -599,10 +670,10 @@ void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLo
     gk_startwctimer(vault->timer_global);
     int32_t vi=newEdges[idx*2+1], vj=newEdges[idx*2+2];
 
-    printf("\n**********************************\nNew Edge %d : (%d, %d)\n", idx+1, vault->iperm[vi]+1, vault->iperm[vj]+1);
+    printf("New Edge %d : (%d, %d)\n", idx+1, vault->iperm[vi]+1, vault->iperm[vj]+1);
     gk_startwctimer(vault->timer_1);
     /* 1. Add a new edge to the hashmap */
-    edgeblock_t* inserted_edge = addNewEdge(vault, hmap, vi, vj);
+    edgeblock_t* inserted_edge = addNewEdge(vault, hmap, listSize, vi, vj);
     // printf("Added new edge\n");
     // printAdjList(modifiedGraph, hmap, vj);
     // printAdjList(modifiedGraph, hmap, vi);
@@ -611,12 +682,12 @@ void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLo
     /* 2. Find root edges */
     gk_startwctimer(vault->timer_2);
     // printf("\n---> Select Root Edges\n");
-    rootEdges_struct *rootEdges = selectRootEdges(vault, modifiedGraph, hmap, vi, vj);
+    rootEdges_struct *rootEdges = selectRootEdges(vault, modifiedGraph, hmap, listSize, vi, vj);
     gk_stopwctimer(vault->timer_2);
 
     gk_startwctimer(vault->timer_3);
     // printf("\n---> Update\n");
-    ntriangles += updateTrussNumbers(vault, modifiedGraph, hmap, vi, vj, inserted_edge, rootEdges);
+    ntriangles += updateTrussNumbers(vault, modifiedGraph, hmap, listSize, vi, vj, inserted_edge, rootEdges);
     gk_stopwctimer(vault->timer_3);
 
     gk_stopwctimer(vault->timer_global);
@@ -640,10 +711,20 @@ void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLo
     selectRootEdgesTime = selectRootEdgesTime + gk_getwctimer(vault->timer_2);
     traversalTime = traversalTime + gk_getwctimer(vault->timer_3);
     totalRuntime = totalRuntime + gk_getwctimer(vault->timer_global);
-    printf("Till now addEdgeTime Runtime : %.8lf\n", gk_getwctimer(vault->timer_1));
+    printf("\n\n\nTill now addEdgeTime Runtime : %.8lf\n", gk_getwctimer(vault->timer_1));
     printf("Till now selectRootEdgesTime Runtime : %.8lf\n", gk_getwctimer(vault->timer_2));
     printf("Till now Incremental traversalTime : %.8lf\n", gk_getwctimer(vault->timer_3));
     printf("Till now Incremental Runtime : %.8lf\n", gk_getwctimer(vault->timer_global));
+    /*
+    char *ptr = strrchr(params->infile, '/');
+    strcpy(ptr, "/incrementalTimings.txt");
+    printf("Writing times\n");
+    FILE *fpoutTimes;
+    fpoutTimes = gk_fopen(params->infile, "a", "fpoutTimes");
+    fprintf(fpoutTimes, "%.6lf\n", gk_getwctimer(vault->timer_global));
+    gk_fclose(fpoutTimes);
+    printf("Done\n");
+    */
 
     char* incrementalTimingsFile = params->infile;
     printf("Incremental Timings writtne to the file : %s \n", incrementalTimingsFile);
@@ -653,7 +734,7 @@ void stream_v2(params_t *params, vault_t *vault, char* edgesFile, char* outputLo
     fpoutTimes = gk_fopen(incrementalTimingsFile, "a", "fpoutTimes");
     fprintf(fpoutTimes, "%.6lf\n", gk_getwctimer(vault->timer_global));
     gk_fclose(fpoutTimes);
-
+    
     /* Free resources */
     for(int8_t i=0; i<=rootEdges->ktmax; i++)
       gk_free((void **)&rootEdges->queue[i].edgelist, LTERM);

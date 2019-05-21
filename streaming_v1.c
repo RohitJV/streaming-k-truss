@@ -129,6 +129,17 @@ static void selectRootEdgesForDFS(vault_t *vault,
   int32_t startj = graph->xadj[vj], endj = vault->endIdx[vj];
   int32_t *adjncy = graph->adjncy, *kt = vault->kt;
 
+  // printf("adjancency list of %d \n", vi);
+  // while(starti<endi) {
+  //   printf("%d, \n", graph->adjncy[starti++]);
+  // }
+  // printf("\nadjancency list of %d \n", vj);
+  // while(startj<endj) {
+  //   printf("%d, \n", graph->adjncy[startj++]);
+  // }
+  // starti=graph->xadj[vi];
+  // startj=graph->xadj[vj];
+
   memset(trussWiseSupCount, 0, (vault->ktmax + 2) * sizeof(int32_t));
   while(starti<endi && startj<endj) {
     if(adjncy[starti] == adjncy[startj]) {
@@ -442,6 +453,9 @@ static void traversalAlgorithm(vault_t *vault,
   int32_t *adjncy = graph->adjncy;
 
   trussWiseSupCount[vault->ktmax+1]=0;
+  // for(int8_t i=0; i<=vault->ktmax; i++) {
+  //   printf("SC(%d) : %d\n", i, trussWiseSupCount[i]);
+  // }
   for(int32_t i=vault->ktmax-1; i>=0; i--)
     trussWiseSupCount[i]+=trussWiseSupCount[i+1];
 
@@ -451,6 +465,7 @@ static void traversalAlgorithm(vault_t *vault,
       continue;
     break;
   }
+  printf("local_ktmax : %d\n", max_kt_possible);
 
   /* Perform actual traversal */
   int32_t rooti=0, ei, k, check=1, new_k=0;

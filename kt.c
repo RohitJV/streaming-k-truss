@@ -1605,9 +1605,9 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
     int64_t start, end;
   } *xaii;
 
-  int32_t vi, vik, vj, vjk, vk, nvtxs, nltriangles, sup;
+  int32_t vi, vik, vj, vjk, vk, nvtxs, nltriangles, sup, nlOps;
   ssize_t ti, ei, eistart, eiend, ej, ejstart, ejend;
-  int64_t nedges, ntriangles;
+  int64_t nedges, ntriangles, nOps=0;
   ssize_t *xadj;
   int32_t *adjncy, *adjwgt;
   int32_t k, sk, nsups, *sups;
@@ -1671,6 +1671,13 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
     xaii[vi].start = xaii[vi-1].start;
   xaii[0].start = 0;
 
+  int32_t num_intersections = 0;
+  for (vi=1; vi<=nvtxs; vi++) {
+    int32_t len = xaii[vi].start - xaii[vi-1].start;
+    num_intersections = num_intersections + (len)*(len+1)/2;
+  }
+  printf("********** Total number of intersections : %d **********\n", num_intersections);
+
   /* populate it into two steps to ensure that the sorted order is maintained */
   for (nedges=0, vi=0; vi<nvtxs; vi++) {
     for (ei=xadj[vi], eiend=xadj[vi+1]; ei<eiend; ei++) {
@@ -1729,10 +1736,12 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
   printf("#triangles before peeling: %zd\n", ntriangles);
   ntriangles = 0;
 
+
   gk_startwctimer(vault->timer_ktpeeling);
   /* get into the k-truss enumeration loop */
   for (k=1; k<nsups && sptr[k]!=nedges; k++) {
     nltriangles = 0;
+    // nlOps = 0;
     for (si=sptr[k]; si<sptr[k+1]; si++) {
       ti = sind[si];
       vi = edges[ti].vi;
@@ -1775,6 +1784,7 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
 
         /* decrease the support of the intersection */
         while (ei >= eistart && ej >= ejstart) {
+          // nlOps++;
           if (vik > vjk) {
             ei  -= aii[ei].dec;
             vik  = aii[ei].vj;
@@ -1835,6 +1845,7 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
     if (params->dbglvl&1)
       printf("k: %7d; nleft: %7zd, nltriangles: %7d\n", k, nedges-sptr[k+1], nltriangles);
 
+    // nOps += nlOps;
     ntriangles += nltriangles;
   }
   gk_stopwctimer(vault->timer_ktpeeling);
@@ -1847,6 +1858,7 @@ int64_t kt_Baseline5(params_t *params, vault_t *vault)
   gk_free((void **)&edges, &aii, &xaii, &ids, &sups, &sptr, &sind, &sloc, LTERM);
 
   return ntriangles;
+  // return nOps;
 }
 
 
@@ -4714,7 +4726,6 @@ int64_t kt_ComputeEdgeSupportPar(params_t *params, vault_t *vault)
 
           if (nlocal > 0) {
             ntriangles += nlocal;
-
             assert(adjncy[xadj[vi]+tadjncy[ej+1]-1] == vj);
             #pragma omp atomic
             adjwgt[xadj[vi]+tadjncy[ej+1]-1] += nlocal;

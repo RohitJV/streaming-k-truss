@@ -193,13 +193,20 @@ int main(int argc, char *argv[])
     stream_v2(params, vault, newEdgesFile, outputLocation);
   }
   else {
-    char *ptr = strrchr(params->infile, '/');
+    FILE *fpout, *fpout1;
+    char* baselineTimingsFile = strdup(params->infile);
+    char* baselineOpsFile = strdup(params->infile);
+
+    char *ptr = strrchr(baselineTimingsFile, '/');
     strcpy(ptr, "/baselineTimings.txt");
-    FILE *fpout;
-    fpout = gk_fopen(params->infile, "a", "fpout");
+    fpout = gk_fopen(baselineTimingsFile, "a", "fpout");
     fprintf(fpout, "%.6lf\n", gk_getwctimer(vault->timer_global));
     gk_fclose(fpout);
-  }
 
-  //cleanMem(vault, params);
+    ptr = strrchr(baselineOpsFile, '/');
+    strcpy(ptr, "/baselineOps.txt");
+    fpout1 = gk_fopen(baselineOpsFile, "a", "fpout1");
+    fprintf(fpout1, "%"PRId64"\n", gk_getwctimer(ntriangles));
+    gk_fclose(fpout1);
+  }
 }

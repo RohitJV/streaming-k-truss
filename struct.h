@@ -118,7 +118,8 @@ typedef struct eedge_t eedge_t;
 struct eedge_t {
   int32_t v; /* 4 bytes */
   eedge_t *revPtr; /* 8 bytes */
-  int8_t k, mtd, ptd, td, visited; /* 1*5 bytes */
+  int8_t k, td, visited; /* 1*3 bytes */
+  int8_t mtd; 
 }; /* 4 + 8 + 1*5 = 17 bytes */
 
 typedef struct {

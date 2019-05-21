@@ -9,7 +9,8 @@
 #ifndef __DEF_H__
 #define __DEF_H__
 
-// #define TEST_CORRECTNESS
+#define TEST_CORRECTNESS
+// #define TEST_V2
 #define HMAP_SIZE 32768
 
 #define MAXLINE         1024*128
